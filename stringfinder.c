@@ -1,48 +1,46 @@
 #include <stdio.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <stdbool.h>
 #include <stdlib.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <sys/types.h>
 
-pid_t checkPID(){
-    pid_t PID;
-    printf("Please give the number of process to search the string for: ");
-    scanf("%i", &PID);
-    return PID;
-}
-
-bool proccessExists(pid_t pid){
-    if(kill(pid, 0)==0) {
-        return true;
-    } else {
-        return false;
+static pid_t checkPID() {
+    pid_t pid;
+    printf("Please give the PID of process: ");
+    if (scanf("%d", &pid) != 1) {
+        printf("Invalid PID\n");
+        return -1;
     }
+    return pid;
 }
 
-char* tryOpenAndReadMapsFile(pid_t pid){
+static bool processExists(pid_t pid) {
+    if (kill(pid, 0)==0) return true;
+    else return false;
+}
+
+static char* tryOpenAndReadMapsFile(pid_t pid) {
     char path[256];
     snprintf(path, sizeof(path), "/proc/%d/maps", pid);
     FILE* file = fopen(path, "r");
-    fseek(file, 0, SEEK_END);
-    long size = ftell(file);
-    rewind(file);
+    if (file == NULL) {
+        perror("fopen");
+        return NULL;
+    }
 
-    char *content = malloc(size + 1);
-    fread(content, 1, size, file);
-    content[size]='\0';
-    fclose(file);
-    
-    return content;
+    char content[8192];
+    while (true) {
+        if (fgets(content, sizeof(content), file) == NULL) break;
+        printf("%s", content);
+    }
 }
 
-int main(void){
+int main(void) {
     pid_t pid = checkPID();
-    if(!proccessExists(pid)){
-        printf("Process doesn't exist");
+    if (!processExists(pid)) {
+        printf("PID does not exist\n");
         return 1;
     }
-    printf("Process exists");
-    char *content = tryOpenAndReadMapsFile(pid);
-    printf(content);
-    free(content);
+    printf("PID exists\n");
+    tryOpenAndReadMapsFile(pid);
 }
