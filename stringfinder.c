@@ -71,8 +71,24 @@ static unsigned int tryOpenAndReadMapsFile(pid_t pid, MemoryRegion regions[], un
     return region_count;
 }
 
-static void searchBuffer(char content[], ssize_t bytes_read, char search[]) {
+static void searchBuffer(char content[], ssize_t bytes_read, char search[], uintptr_t address) {
+    size_t search_length = strlen(search);
 
+    if (search_length == 0 || search_length > (size_t)bytes_read) {
+        return;
+    }
+    for (ssize_t i = 0; i <= bytes_read - (ssize_t)search_length; i++) {
+        bool found = true;
+        for (size_t j = 0; j < search_length; j++) {
+            if (content[i + j] != search[j]) {
+                found = false;
+                break;
+            }
+        }
+        if (found) {
+            printf("Found at address: 0x%" PRIxPTR "\n", address + i);
+        }
+    }
 }
 
 static int readProcessMemory(pid_t pid, MemoryRegion region, uintptr_t region_size, char search[]) {
@@ -87,7 +103,7 @@ static int readProcessMemory(pid_t pid, MemoryRegion region, uintptr_t region_si
 
     char content[8192];
     uintptr_t remaining = region_size;
-
+    uintptr_t current_address = region.start;
     off_t seek = lseek(file, (off_t)region.start, SEEK_SET);
 
     if (seek == (off_t)-1) {
@@ -95,7 +111,6 @@ static int readProcessMemory(pid_t pid, MemoryRegion region, uintptr_t region_si
         close(file);
         return -1;
     }
-
     while (remaining > 0) {
         size_t bytes_to_read;
 
@@ -107,17 +122,15 @@ static int readProcessMemory(pid_t pid, MemoryRegion region, uintptr_t region_si
         ssize_t bytes_read = read(file, content, bytes_to_read);
         if (bytes_read == -1) {
             perror("read");
-            close(file);
-            return -1;
+            break;
         }
         if (bytes_read == 0) {
             break;
         }
-
-        searchBuffer(content, bytes_read, search);
+        searchBuffer(content, bytes_read, search, current_address);
+        current_address += bytes_read;
         remaining -= bytes_read;
     }
-
     close(file);
     return 0;
 }
