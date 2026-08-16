@@ -6,6 +6,9 @@
 #include <string.h>
 #include <sys/types.h>
 #include <inttypes.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
 
 typedef struct {
     uintptr_t start;
@@ -13,60 +16,131 @@ typedef struct {
     char permissions[5];
 } MemoryRegion;
 
-static pid_t checkPID() {
+static pid_t checkPID(void) {
     pid_t pid;
+
     printf("Please give the PID of process: ");
+
     if (scanf("%d", &pid) != 1) {
         printf("Invalid PID\n");
         return -1;
     }
+
     return pid;
 }
 
 static bool processExists(pid_t pid) {
-    if (kill(pid, 0)==0) return true;
-    else return false;
+    if (pid <= 0) {
+        return false;
+    }
+    if (kill(pid, 0) == 0) {
+        return true;
+    }
+    if (errno == EPERM) {
+        return true;
+    }
+    return false;
 }
 
-static void tryOpenAndReadMapsFile(pid_t pid) {
+static unsigned int tryOpenAndReadMapsFile(
+    pid_t pid,
+    MemoryRegion regions[],
+    unsigned int max_regions
+) {
     char path[256];
     snprintf(path, sizeof(path), "/proc/%d/maps", pid);
-    FILE* file = fopen(path, "r");
+    FILE *file = fopen(path, "r");
+
     if (file == NULL) {
         perror("fopen");
-        return;
+        return 0;
     }
 
     char content[8192];
     unsigned int region_count = 0;
-    MemoryRegion region[100];
 
-    while (true) {
-        MemoryRegion current;
-
-        if (fgets(content, sizeof(content), file) == NULL) break;
-        if (sscanf(content, "%" SCNxPTR "-%" SCNxPTR " %4s", &region[region_count].start, &region[region_count].end, region[region_count].permissions) != 3) {
-            fclose(file);
-            printf("Failed to read addresses or parse them");
-            return;
+    while (fgets(content, sizeof(content), file) != NULL) {
+        if (region_count >= max_regions) {
+            break;
         }
-
-        if (region[region_count].permissions[0] == 'r') {
-            printf("Start address: %" PRIxPTR "\n", region[region_count].start);
-            printf("End address: %" PRIxPTR "\n", region[region_count].end);
-            printf("Permissions: %s\n", region[region_count].permissions);
+        if (sscanf(content,"%" SCNxPTR "-%" SCNxPTR " %4s", &regions[region_count].start, &regions[region_count].end, regions[region_count].permissions) != 3) {
+            continue;
+        }
+        if (regions[region_count].permissions[0] == 'r') {
             region_count++;
         }
     }
     fclose(file);
+    return region_count;
+}
+
+static int readProcessMemory(pid_t pid, MemoryRegion region) {
+    char path[256];
+    snprintf(path, sizeof(path), "/proc/%d/mem", pid);
+    int file = open(path, O_RDONLY);
+
+    if (file == -1) {
+        perror("open");
+        return -1;
+    }
+
+    char content[8192];
+
+    off_t seek = lseek(file, (off_t)region.start, SEEK_SET);
+
+    if (seek == (off_t)-1) {
+        perror("lseek");
+        close(file);
+        return -1;
+    }
+
+    ssize_t n = read(file, content, sizeof(content));
+
+    if (n == -1) {
+        perror("read");
+        close(file);
+        return -1;
+    }
+
+    printf("%zd bytes read from 0x%" PRIxPTR "\n",n,region.start);
+
+    for (ssize_t i = 0; i < n; i++) {
+        printf("%02x ", (unsigned char)content[i]);
+
+        if ((i + 1) % 16 == 0) {
+            printf("\n");
+        }
+    }
+    printf("\n");
+    close(file);
+    return 0;
 }
 
 int main(void) {
     pid_t pid = checkPID();
+
+    if (pid == -1) {
+        return 1;
+    }
+
     if (!processExists(pid)) {
         printf("PID does not exist\n");
         return 1;
     }
+
     printf("PID exists\n");
-    tryOpenAndReadMapsFile(pid);
+
+    MemoryRegion regions[100];
+    unsigned int region_count = tryOpenAndReadMapsFile(pid, regions, 100);
+
+    printf("Found %u readable regions\n", region_count);
+
+    printf("READ MEMORY:\n\n");
+    for (unsigned int i = 0; i < region_count; i++) {
+
+        printf(
+            "Region %u: 0x%" PRIxPTR "-0x%" PRIxPTR " %s\n", i, regions[i].start, regions[i].end, regions[i].permissions);
+        readProcessMemory(pid, regions[i]);
+    }
+    return 0;
 }
