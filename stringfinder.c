@@ -42,11 +42,7 @@ static bool processExists(pid_t pid) {
     return false;
 }
 
-static unsigned int tryOpenAndReadMapsFile(
-    pid_t pid,
-    MemoryRegion regions[],
-    unsigned int max_regions
-) {
+static unsigned int tryOpenAndReadMapsFile(pid_t pid, MemoryRegion regions[], unsigned int max_regions) {
     char path[256];
     snprintf(path, sizeof(path), "/proc/%d/maps", pid);
     FILE *file = fopen(path, "r");
@@ -63,18 +59,19 @@ static unsigned int tryOpenAndReadMapsFile(
         if (region_count >= max_regions) {
             break;
         }
-        if (sscanf(content,"%" SCNxPTR "-%" SCNxPTR " %4s", &regions[region_count].start, &regions[region_count].end, regions[region_count].permissions) != 3) {
+        if (sscanf(content, "%" SCNxPTR "-%" SCNxPTR " %4s", &regions[region_count].start, &regions[region_count].end, regions[region_count].permissions) != 3) {
             continue;
         }
         if (regions[region_count].permissions[0] == 'r') {
             region_count++;
         }
     }
+
     fclose(file);
     return region_count;
 }
 
-static int readProcessMemory(pid_t pid, MemoryRegion region) {
+static int readProcessMemory(pid_t pid, MemoryRegion region, uintptr_t region_size) {
     char path[256];
     snprintf(path, sizeof(path), "/proc/%d/mem", pid);
     int file = open(path, O_RDONLY);
@@ -85,6 +82,7 @@ static int readProcessMemory(pid_t pid, MemoryRegion region) {
     }
 
     char content[8192];
+    uintptr_t remaining = region_size;
 
     off_t seek = lseek(file, (off_t)region.start, SEEK_SET);
 
@@ -94,24 +92,41 @@ static int readProcessMemory(pid_t pid, MemoryRegion region) {
         return -1;
     }
 
-    ssize_t n = read(file, content, sizeof(content));
+    while (remaining > 0) {
+        size_t bytes_to_read;
 
-    if (n == -1) {
-        perror("read");
-        close(file);
-        return -1;
-    }
-
-    printf("%zd bytes read from 0x%" PRIxPTR "\n",n,region.start);
-
-    for (ssize_t i = 0; i < n; i++) {
-        printf("%02x ", (unsigned char)content[i]);
-
-        if ((i + 1) % 16 == 0) {
-            printf("\n");
+        if (remaining > sizeof(content)) {
+            bytes_to_read = sizeof(content);
+        } else {
+            bytes_to_read = remaining;
         }
+
+        ssize_t bytes_read = read(file, content, bytes_to_read);
+
+        if (bytes_read == -1) {
+            perror("read");
+            close(file);
+            return -1;
+        }
+
+        if (bytes_read == 0) {
+            break;
+        }
+
+        printf("%zd bytes read\n", bytes_read);
+
+        for (ssize_t i = 0; i < bytes_read; i++) {
+            printf("%02x ", (unsigned char)content[i]);
+
+            if ((i + 1) % 16 == 0) {
+                printf("\n");
+            }
+        }
+
+        printf("\n");
+        remaining -= bytes_read;
     }
-    printf("\n");
+
     close(file);
     return 0;
 }
@@ -136,11 +151,15 @@ int main(void) {
     printf("Found %u readable regions\n", region_count);
 
     printf("READ MEMORY:\n\n");
+
     for (unsigned int i = 0; i < region_count; i++) {
         printf("Region %u: 0x%" PRIxPTR "-0x%" PRIxPTR " %s\n", i, regions[i].start, regions[i].end, regions[i].permissions);
+
         uintptr_t region_size = regions[i].end - regions[i].start;
         printf("Size: 0x%" PRIxPTR "\n", region_size);
-        readProcessMemory(pid, regions[i]);
+
+        readProcessMemory(pid, regions[i], region_size);
     }
+
     return 0;
 }
