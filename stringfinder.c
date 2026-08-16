@@ -137,9 +137,9 @@ int main(void) {
 
     printf("READ MEMORY:\n\n");
     for (unsigned int i = 0; i < region_count; i++) {
-
-        printf(
-            "Region %u: 0x%" PRIxPTR "-0x%" PRIxPTR " %s\n", i, regions[i].start, regions[i].end, regions[i].permissions);
+        printf("Region %u: 0x%" PRIxPTR "-0x%" PRIxPTR " %s\n", i, regions[i].start, regions[i].end, regions[i].permissions);
+        uintptr_t region_size = regions[i].end - regions[i].start;
+        printf("Size: 0x%" PRIxPTR "\n", region_size);
         readProcessMemory(pid, regions[i]);
     }
     return 0;
