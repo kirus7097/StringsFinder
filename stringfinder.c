@@ -100,27 +100,14 @@ static int readProcessMemory(pid_t pid, MemoryRegion region, uintptr_t region_si
         } else {
             bytes_to_read = remaining;
         }
-
         ssize_t bytes_read = read(file, content, bytes_to_read);
-
         if (bytes_read == -1) {
             perror("read");
             close(file);
             return -1;
         }
-
         if (bytes_read == 0) {
             break;
-        }
-
-        printf("%zd bytes read\n", bytes_read);
-
-        for (ssize_t i = 0; i < bytes_read; i++) {
-            printf("%02x ", (unsigned char)content[i]);
-
-            if ((i + 1) % 16 == 0) {
-                printf("\n");
-            }
         }
 
         printf("\n");
@@ -131,8 +118,13 @@ static int readProcessMemory(pid_t pid, MemoryRegion region, uintptr_t region_si
     return 0;
 }
 
+static void searchBuffer(char content[], ssize_t bytes_read, char search[]) {
+
+}
+
 int main(void) {
     pid_t pid = checkPID();
+    char search[256];
 
     if (pid == -1) {
         return 1;
@@ -144,20 +136,19 @@ int main(void) {
     }
 
     printf("PID exists\n");
+    printf("Please provide text to search for: ");
+    if (scanf("%255s", search) != 1) {
+        printf("Invalid text\n");
+        return -1;
+    }
+    printf("Search for: %s\n", search);
 
     MemoryRegion regions[100];
     unsigned int region_count = tryOpenAndReadMapsFile(pid, regions, 100);
-
-    printf("Found %u readable regions\n", region_count);
-
     printf("READ MEMORY:\n\n");
 
     for (unsigned int i = 0; i < region_count; i++) {
-        printf("Region %u: 0x%" PRIxPTR "-0x%" PRIxPTR " %s\n", i, regions[i].start, regions[i].end, regions[i].permissions);
-
         uintptr_t region_size = regions[i].end - regions[i].start;
-        printf("Size: 0x%" PRIxPTR "\n", region_size);
-
         readProcessMemory(pid, regions[i], region_size);
     }
 
