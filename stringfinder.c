@@ -71,7 +71,7 @@ static unsigned int tryOpenAndReadMapsFile(pid_t pid, MemoryRegion regions[], un
     return region_count;
 }
 
-static int readProcessMemory(pid_t pid, MemoryRegion region, uintptr_t region_size) {
+static int readProcessMemory(pid_t pid, MemoryRegion region, uintptr_t region_size, char search[]) {
     char path[256];
     snprintf(path, sizeof(path), "/proc/%d/mem", pid);
     int file = open(path, O_RDONLY);
@@ -100,7 +100,7 @@ static int readProcessMemory(pid_t pid, MemoryRegion region, uintptr_t region_si
         } else {
             bytes_to_read = remaining;
         }
-        ssize_t bytes_read = read(file, content, bytes_to_read);
+        ssize_t bytes_read = read(file, content, bytes_to_read, search[]);
         if (bytes_read == -1) {
             perror("read");
             close(file);
@@ -149,8 +149,7 @@ int main(void) {
 
     for (unsigned int i = 0; i < region_count; i++) {
         uintptr_t region_size = regions[i].end - regions[i].start;
-        readProcessMemory(pid, regions[i], region_size);
+        readProcessMemory(pid, regions[i], region_size, search);
     }
-
     return 0;
 }
